@@ -37,74 +37,86 @@ def get_transactions():
     date_limit = datetime(datetime.now().year, 9, 1)
 
     while has_more:
-        response = requests.post(url, headers=headers, json=payload)
-        data = response.json()
-        
-        # Débogage : Afficher la réponse complète de Notion
-        print("Réponse de Notion:", data)
-        
-        if 'results' not in data:
-            print("Erreur : 'results' non trouvé dans la réponse de Notion.")
-            return jsonify({"error": "Erreur lors de la récupération des données de Notion"}), 500
+        try:
+            response = requests.post(url, headers=headers, json=payload)
+            response.raise_for_status()  # Génère une exception pour les erreurs HTTP
+            data = response.json()
+            print("Réponse de Notion:", data)  # Debug : afficher la réponse de Notion
+            
+            if 'results' not in data:
+                print("Erreur : 'results' non trouvé dans la réponse de Notion.")
+                return jsonify({"error": "Erreur lors de la récupération des données de Notion"}), 500
 
-        for result in data.get('results', []):
-            props = result['properties']
-            transaction_date = props['Date']['date']['start'] if props['Date']['date'] else None
-            if transaction_date:
-                transaction_date_obj = datetime.strptime(transaction_date, '%Y-%m-%d')
-                if transaction_date_obj >= date_limit:  # Filtrer les transactions après le 1er septembre
-                    transaction = {
-                        "id": result['id'],
-                        "Date": transaction_date,
-                        "Libellé": props['Libellé']['title'][0]['text']['content'],
-                        "Débit euros": props['Débit euros']['number'],
-                        "Crédits euros": props['Crédits euros']['number'],
-                        "Fichier de Facture": props['Fichier de Facture']['files']
-                    }
-                    if not transaction["Fichier de Facture"]:  # Transactions sans facture
-                        transactions.append(transaction)
-        has_more = data.get('has_more', False)
-        payload['start_cursor'] = data.get('next_cursor')
+            for result in data.get('results', []):
+                props = result['properties']
+                transaction_date = props['Date']['date']['start'] if props['Date']['date'] else None
+                if transaction_date:
+                    transaction_date_obj = datetime.strptime(transaction_date, '%Y-%m-%d')
+                    if transaction_date_obj >= date_limit:
+                        transaction = {
+                            "id": result['id'],
+                            "Date": transaction_date,
+                            "Libellé": props['Libellé']['title'][0]['text']['content'],
+                            "Débit euros": props['Débit euros']['number'],
+                            "Crédits euros": props['Crédits euros']['number'],
+                            "Fichier de Facture": props['Fichier de Facture']['files']
+                        }
+                        if not transaction["Fichier de Facture"]:
+                            transactions.append(transaction)
+            has_more = data.get('has_more', False)
+            payload['start_cursor'] = data.get('next_cursor')
+        except requests.exceptions.RequestException as e:
+            print("Erreur de requête à Notion :", e)
+            return jsonify({"error": "Erreur de connexion avec Notion"}), 500
 
     return jsonify(transactions)
 
 @app.route('/upload/<transaction_id>', methods=['POST'])
 def upload_file(transaction_id):
-    """Téléverser un fichier vers Transfer.sh et mettre à jour Notion avec le lien du fichier"""
+    """Téléverser un fichier vers File.io et mettre à jour Notion avec le lien du fichier"""
     file = request.files['file']
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
-    # Envoyer le fichier à Transfer.sh pour obtenir une URL temporaire
-    response = requests.post('https://transfer.sh', files={'file': file})
-    if response.status_code == 200:
-        file_url = response.text.strip()
+    try:
+        # Utilisation de File.io pour téléverser le fichier
+        response = requests.post('https://file.io', files={'file': file})
+        if response.status_code == 200:
+            file_data = response.json()
+            file_url = file_data.get('link')  # Récupérer le lien du fichier
 
-        # Mise à jour de la transaction dans Notion avec l'URL du fichier temporaire
-        url = f"https://api.notion.com/v1/pages/{transaction_id}"
-        data = {
-            "properties": {
-                "Fichier de Facture": {
-                    "files": [
-                        {
-                            "name": file.filename,
-                            "external": {
-                                "url": file_url
+            if not file_url:
+                print("Erreur : Aucun lien de fichier retourné par File.io.")
+                return jsonify({"error": "Erreur lors de la récupération de l'URL du fichier"}), 500
+
+            # Mise à jour de la transaction dans Notion avec l'URL du fichier temporaire
+            url = f"https://api.notion.com/v1/pages/{transaction_id}"
+            data = {
+                "properties": {
+                    "Fichier de Facture": {
+                        "files": [
+                            {
+                                "name": file.filename,
+                                "external": {
+                                    "url": file_url
+                                }
                             }
-                        }
-                    ]
+                        ]
+                    }
                 }
             }
-        }
-        notion_response = requests.patch(url, headers=headers, json=data)
-        if notion_response.status_code == 200:
-            return jsonify({"message": "Fichier ajouté avec succès"})
+            notion_response = requests.patch(url, headers=headers, json=data)
+            if notion_response.status_code == 200:
+                return jsonify({"message": "Fichier ajouté avec succès"})
+            else:
+                print("Erreur de Notion lors de la mise à jour :", notion_response.json())
+                return jsonify(notion_response.json()), notion_response.status_code
         else:
-            print("Erreur de Notion lors de la mise à jour :", notion_response.json())
-            return jsonify(notion_response.json()), notion_response.status_code
-    else:
-        print("Erreur lors du téléversement du fichier vers Transfer.sh")
-        return jsonify({"error": "Erreur lors du téléversement du fichier"}), response.status_code
+            print("Erreur lors du téléversement vers File.io :", response.status_code)
+            return jsonify({"error": "Erreur lors du téléversement vers File.io"}), response.status_code
+    except requests.exceptions.RequestException as e:
+        print("Erreur lors de la connexion à File.io :", e)
+        return jsonify({"error": "Erreur lors de la connexion à File.io"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
