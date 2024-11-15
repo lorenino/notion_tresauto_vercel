@@ -29,5 +29,63 @@
             </div>
         </div>
     </div>
+
+    <!-- Script pour récupérer et afficher les données dans le tableau -->
+    <script>
+        async function fetchTransactions() {
+            try {
+                const response = await fetch('/transactions');
+                if (!response.ok) throw new Error('Erreur lors de la récupération des données');
+                
+                const data = await response.json();
+                const tableBody = document.querySelector('#transactions-table-body');
+                tableBody.innerHTML = '';  // Vider le corps du tableau avant d'ajouter de nouvelles lignes
+
+                data.forEach(transaction => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${transaction.Date}</td>
+                        <td>${transaction.Libellé}</td>
+                        <td>${transaction['Débit euros'] || ''}</td>
+                        <td>${transaction['Crédits euros'] || ''}</td>
+                        <td>
+                            <form onsubmit="uploadFile(event, '${transaction.id}')" class="d-flex justify-content-center">
+                                <input type="file" name="file" class="form-control form-control-sm" required style="max-width: 120px;">
+                                <button type="submit" class="btn btn-primary btn-sm ms-1">Envoyer</button>
+                            </form>
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } catch (error) {
+                console.error("Erreur lors de la récupération des transactions :", error);
+                alert("Impossible de récupérer les transactions");
+            }
+        }
+
+        async function uploadFile(event, transactionId) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            
+            try {
+                const response = await fetch(`/upload/${transactionId}`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                alert(result.message || 'Erreur lors du téléversement');
+                event.target.reset();
+            } catch (error) {
+                console.error("Erreur lors du téléversement du fichier :", error);
+                alert("Erreur lors du téléversement du fichier");
+            }
+        }
+
+        // Charger les transactions au démarrage
+        fetchTransactions();
+    </script>
+
+    <!-- JavaScript Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

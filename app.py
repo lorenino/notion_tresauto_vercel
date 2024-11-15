@@ -4,12 +4,12 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-# Charger les variables d'environnement en local
+# Charger les variables d'environnement
 load_dotenv()
 
 app = Flask(__name__)
 
-# Variables d'environnement pour Notion
+# Récupérer les variables d'environnement pour Notion
 NOTION_TOKEN = os.getenv('NOTION_TOKEN')
 DATABASE_ID = os.getenv('DATABASE_ID')
 
@@ -39,6 +39,14 @@ def get_transactions():
     while has_more:
         response = requests.post(url, headers=headers, json=payload)
         data = response.json()
+        
+        # Débogage : Afficher la réponse complète de Notion
+        print("Réponse de Notion:", data)
+        
+        if 'results' not in data:
+            print("Erreur : 'results' non trouvé dans la réponse de Notion.")
+            return jsonify({"error": "Erreur lors de la récupération des données de Notion"}), 500
+
         for result in data.get('results', []):
             props = result['properties']
             transaction_date = props['Date']['date']['start'] if props['Date']['date'] else None
@@ -92,8 +100,10 @@ def upload_file(transaction_id):
         if notion_response.status_code == 200:
             return jsonify({"message": "Fichier ajouté avec succès"})
         else:
+            print("Erreur de Notion lors de la mise à jour :", notion_response.json())
             return jsonify(notion_response.json()), notion_response.status_code
     else:
+        print("Erreur lors du téléversement du fichier vers Transfer.sh")
         return jsonify({"error": "Erreur lors du téléversement du fichier"}), response.status_code
 
 if __name__ == '__main__':
