@@ -1,21 +1,24 @@
 from flask import Flask, jsonify, request, render_template
 import requests
-import os
 from datetime import datetime
+import os
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement en local
+load_dotenv()
 
 app = Flask(__name__)
 
-NOTION_TOKEN = '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'
-DATABASE_ID = '13f7f7b5def5809eba81f50d5c1bd2f7'
+# Variables d'environnement pour Notion
+NOTION_TOKEN = os.getenv('NOTION_TOKEN')
+DATABASE_ID = os.getenv('DATABASE_ID')
 
+# Entêtes pour accéder à l'API Notion
 headers = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28"
 }
-
-UPLOAD_FOLDER = 'static/factures'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.route('/')
 def index():
@@ -59,38 +62,39 @@ def get_transactions():
 
 @app.route('/upload/<transaction_id>', methods=['POST'])
 def upload_file(transaction_id):
-    """Mettre à jour une transaction avec un fichier, en conservant l'extension d'origine"""
+    """Téléverser un fichier vers Transfer.sh et mettre à jour Notion avec le lien du fichier"""
     file = request.files['file']
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
-    # Extraire le nom de fichier et l'extension d'origine
-    filename, file_extension = os.path.splitext(file.filename)
-    saved_filename = f"facture_{transaction_id}_{datetime.now().strftime('%Y-%m-%d')}{file_extension}"
-    filepath = os.path.join(UPLOAD_FOLDER, saved_filename)
-    file.save(filepath)
+    # Envoyer le fichier à Transfer.sh pour obtenir une URL temporaire
+    response = requests.post('https://transfer.sh', files={'file': file})
+    if response.status_code == 200:
+        file_url = response.text.strip()
 
-    # Mise à jour de la transaction dans Notion avec le fichier téléversé
-    url = f"https://api.notion.com/v1/pages/{transaction_id}"
-    data = {
-        "properties": {
-            "Fichier de Facture": {
-                "files": [
-                    {
-                        "name": saved_filename,
-                        "external": {
-                            "url": f"http://localhost:5000/{filepath}"  # URL pour accéder au fichier
+        # Mise à jour de la transaction dans Notion avec l'URL du fichier temporaire
+        url = f"https://api.notion.com/v1/pages/{transaction_id}"
+        data = {
+            "properties": {
+                "Fichier de Facture": {
+                    "files": [
+                        {
+                            "name": file.filename,
+                            "external": {
+                                "url": file_url
+                            }
                         }
-                    }
-                ]
+                    ]
+                }
             }
         }
-    }
-    response = requests.patch(url, headers=headers, json=data)
-    if response.status_code == 200:
-        return jsonify({"message": "Fichier ajouté avec succès"})
+        notion_response = requests.patch(url, headers=headers, json=data)
+        if notion_response.status_code == 200:
+            return jsonify({"message": "Fichier ajouté avec succès"})
+        else:
+            return jsonify(notion_response.json()), notion_response.status_code
     else:
-        return jsonify(response.json()), response.status_code
+        return jsonify({"error": "Erreur lors du téléversement du fichier"}), response.status_code
 
 if __name__ == '__main__':
     app.run(debug=True)
