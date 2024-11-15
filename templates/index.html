@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transactions avec Factures Manquantes</title>
+    <!-- Lien vers Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Lien vers DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css">
+    <style>
+        /* Réduire les marges et padding pour maximiser l'espace */
+        body, .container, .card, .card-body {
+            padding: 0;
+            margin: 0;
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+        .table-responsive {
+            margin: 0;
+            padding: 0;
+        }
+        /* Minimiser la taille des colonnes pour utiliser efficacement l'espace */
+        th, td {
+            font-size: 0.85rem;
+            padding: 4px;
+            white-space: nowrap;  /* Empêche le texte de se casser */
+        }
+        .form-control, .btn {
+            height: 1.5rem;  /* Hauteur compacte */
+            font-size: 0.75rem;
+            padding: 2px 5px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid mt-2">
+        <h1 class="text-center">Transactions avec Factures Manquantes</h1>
+        
+        <div class="card">
+            <div class="card-body p-2">
+                <!-- Tableau responsive et compact -->
+                <div class="table-responsive">
+                    <table id="transactions-table" class="table table-hover table-bordered align-middle mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Date</th>
+                                <th>Libellé</th>
+                                <th>Débit (€)</th>
+                                <th>Crédit (€)</th>
+                                <th>Ajouter une Facture</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactions-table-body">
+                            <!-- Les lignes seront ajoutées ici par JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- JavaScript DataTables -->
+    <script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+    
+    <script>
+        async function fetchTransactions() {
+            const response = await fetch('/transactions');
+            const data = await response.json();
+            const tableBody = document.querySelector('#transactions-table-body');
+            tableBody.innerHTML = '';  // Vider le corps du tableau avant d'ajouter de nouvelles lignes
+
+            data.forEach(transaction => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${transaction.Date}</td>
+                    <td>${transaction.Libellé}</td>
+                    <td>${transaction['Débit euros']}</td>
+                    <td>${transaction['Crédits euros']}</td>
+                    <td>
+                        <form onsubmit="uploadFile(event, '${transaction.id}')" class="d-flex justify-content-center">
+                            <input type="file" name="file" class="form-control form-control-sm" required style="max-width: 120px;">
+                            <button type="submit" class="btn btn-primary btn-sm ms-1">Envoyer</button>
+                        </form>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            // Initialiser DataTables une fois les données chargées
+            $('#transactions-table').DataTable({
+                "paging": false,       // Désactive la pagination pour garder tout visible
+                "info": false,         // Désactive les informations de DataTables
+                "searching": false,    // Désactive la recherche pour garder l'interface simple
+                "order": [[0, 'desc']] // Trie initialement par date en ordre décroissant
+            });
+        }
+
+        async function uploadFile(event, transactionId) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const response = await fetch(`/upload/${transactionId}`, {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            alert(result.message || 'Erreur');
+            event.target.reset();
+        }
+
+        // Charger les transactions au démarrage
+        fetchTransactions();
+    </script>
+</body>
+</html>
